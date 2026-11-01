@@ -17,7 +17,7 @@ if (parts.length !== 3) throw new Error('unexpected JWT shape')
 const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'))
 const evidence = {
   oidc_requested: true,
-  post_approval_revision: 2,
+  post_approval_revision: 3,
   token_sha256: crypto.createHash('sha256').update(token).digest('hex'),
   iss: payload.iss,
   aud: payload.aud,
