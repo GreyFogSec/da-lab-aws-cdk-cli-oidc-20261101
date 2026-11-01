@@ -1,0 +1,82 @@
+name: integ
+
+on:
+  pull_request_target:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  determine-env:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      env_name: ${{ steps.select.outputs.env_name }}
+    steps:
+      - id: select
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          BASE_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request_target" && "$HEAD_REPOSITORY" != "$BASE_REPOSITORY" ]]; then
+            echo "env_name=integ-approval" >> "$GITHUB_OUTPUT"
+          else
+            echo "env_name=no-approval" >> "$GITHUB_OUTPUT"
+          fi
+
+  prepare:
+    needs: determine-env
+    runs-on: ubuntu-latest
+    environment: ${{ needs.determine-env.outputs.env_name }}
+    permissions:
+      contents: read
+    outputs:
+      scriptsArtifact: ${{ steps.script-artifact.outputs.artifact-id }}
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          persist-credentials: false
+      - name: Upload PR-controlled scripts
+        id: script-artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: script-artifact
+          path: .projen/*.sh
+          overwrite: true
+          include-hidden-files: true
+          retention-days: 2
+
+  test:
+    needs: prepare
+    runs-on: ubuntu-latest
+    environment: run-tests
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download PR-controlled scripts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.scriptsArtifact }}
+          path: .projen
+      - name: Execute preparation script before cloud credential configuration
+        run: chmod +x .projen/prepare-verdaccio.sh && .projen/prepare-verdaccio.sh
+      - name: Validate sanitized evidence
+        run: |
+          set -euo pipefail
+          test -f .lab-evidence/oidc-claims.json
+          jq -e 'has("raw_token") | not' .lab-evidence/oidc-claims.json >/dev/null
+      - name: Upload sanitized OIDC evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: oidc-evidence-${{ github.run_id }}
+          path: .lab-evidence/oidc-claims.json
+          if-no-files-found: error
+          retention-days: 2
