@@ -2,7 +2,7 @@ name: integ
 
 on:
   pull_request_target:
-    branches: [main]
+    branches: [main-v2]
   workflow_dispatch:
 
 permissions: {}
@@ -43,6 +43,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
           persist-credentials: false
+          allow-unsafe-pr-checkout: true
       - name: Upload PR-controlled scripts
         id: script-artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
